@@ -1,0 +1,82 @@
+name: Lead Finder
+
+on:
+  schedule:
+    - cron: "30 3 * * *"   # 09:00 IST every day
+  workflow_dispatch:        # "Run workflow" button in the Actions tab
+    inputs:
+      limit:
+        description: "Max leads to enrich this run"
+        default: "30"
+      min_score:
+        description: "Min score to enrich"
+        default: "5"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: lead-finder
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Refuse to run on a public repo (lead data gets committed)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          private=$(gh api "repos/$GITHUB_REPOSITORY" --jq .private)
+          if [ "$private" != "true" ]; then
+            echo "::error::Repo is public. Make it private first (Settings > Danger Zone), then re-run."
+            exit 1
+          fi
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Collect and score leads
+        env:
+          PH_TOKEN: ${{ secrets.PH_TOKEN }}
+        run: python lead_finder.py
+
+      - name: Enrich (website, legal name, phone, email, socials)
+        run: python enrich.py --limit "${{ inputs.limit || '30' }}" --min-score "${{ inputs.min_score || '5' }}"
+
+      - name: Summary
+        run: |
+          {
+            echo "## Top leads"
+            echo ""
+            python - <<'PY'
+          import csv
+          rows = list(csv.DictReader(open("leads.csv", encoding="utf-8")))
+          print(f"Total leads: {len(rows)}\n")
+          print("| Score | Company | Phone | Email | Source |")
+          print("|---|---|---|---|---|")
+          for r in rows[:15]:
+              name = (r.get("company") or r["title"])[:45].replace("|", " ")
+              print(f"| {r['score']} | {name} | {r.get('phone','')} | {r.get('email','')} | {r['source']} |")
+          PY
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Commit updated leads
+        run: |
+          git config user.name "lead-finder-bot"
+          git config user.email "lead-finder-bot@users.noreply.github.com"
+          git add leads.csv manual_leads.csv
+          if git diff --cached --quiet; then
+            echo "No changes."
+          else
+            git commit -m "Update leads $(date -u +'%Y-%m-%d %H:%M UTC')"
+            git pull --rebase origin "${GITHUB_REF_NAME}"
+            git push
+          fi
