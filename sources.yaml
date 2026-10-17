@@ -1,0 +1,60 @@
+# Add or remove sources here. Only PUBLIC pages and search queries.
+# No login, captcha-solving or stealth is used. If a site blocks us, it is skipped.
+
+freshness_days: 14        # ignore results older than this
+results_per_query: 10
+
+# ---------- 1. SEARCH (needs TAVILY_API_KEY, EXA_API_KEY or BRAVE_API_KEY) ----------
+# Explicit intent: people asking for a designer right now.
+searches:
+  - name: linkedin-asks
+    query: '"looking for" OR "need" OR "hiring" brand designer OR "brand identity" OR "logo designer" OR packaging designer'
+    domains: [linkedin.com]
+
+  - name: reddit-asks
+    query: 'need brand identity OR logo designer OR packaging designer for my startup OR brand'
+    domains: [reddit.com]
+
+  - name: x-asks
+    query: 'looking for a brand designer OR "brand identity" OR "logo designer" startup'
+    domains: [x.com, twitter.com]
+
+  - name: wellfound-jobs
+    query: 'brand designer OR "brand identity" freelance OR contract'
+    domains: [wellfound.com]
+
+  - name: indie-hackers-asks
+    query: 'looking for brand designer OR logo designer'
+    domains: [indiehackers.com]
+
+  - name: web-asks
+    query: '"looking for a brand designer" OR "need a brand identity" OR "hiring a brand identity designer" India'
+
+# Trigger events: they will need branding soon.
+  - name: d2c-launches
+    query: 'D2C brand launch India new brand launching packaging'
+
+  - name: funding-consumer
+    query: 'raises pre-seed OR seed funding D2C OR skincare OR food OR beverage OR wellness brand India'
+
+  - name: rebrands
+    query: 'announces rebrand OR "new brand identity" OR "brand refresh" startup India'
+
+# ---------- 2. PAGES (watched directly) ----------
+# mode: classify -> each link goes to the Groq scorer
+# mode: trigger  -> every new entry gets base_score (use for cohort/portfolio lists), no LLM cost
+# render: true   -> needs Playwright for JavaScript pages
+pages:
+  # Behance's terms restrict scraping, so this is OFF by default. Enable at your own risk.
+  - name: behance-jobs
+    url: https://www.behance.net/joblist
+    mode: classify
+    render: true
+    enabled: false
+
+  # Examples: add accelerator / incubator cohort pages you find. Verify the URL loads without login.
+  # - name: example-accelerator-cohort
+  #   url: https://example-accelerator.com/portfolio
+  #   mode: trigger
+  #   base_score: 55
+  #   signal: accelerator cohort

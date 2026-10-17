@@ -32,3 +32,13 @@ The workflow in `.github/workflows/lead-finder.yml` runs daily at 09:00 IST and 
 - **Product Hunt (optional):** Settings > Secrets and variables > Actions > New secret named `PH_TOKEN`.
 - **Repo must be private.** The workflow refuses to run on a public repo because it commits lead data.
 - Reddit sometimes blocks GitHub's servers. If Reddit returns nothing, funding feeds and manual leads still work.
+
+## Intent scoring and discovery (v2)
+Every lead gets a 0-100 score and a tier: **HOT** (70+), **WARM** (40-69), COLD. Filter `leads.csv` by `tier` and work HOT first.
+
+- **Groq scorer:** `llm.py` uses `openai/gpt-oss-120b` to read each post/page and judge real buying intent, need, timeline and budget signal. Without a key it falls back to keyword rules. Capped at 80 calls per run (`LLM_MAX_CALLS`, `GROQ_RPM` to match your rate limit).
+- **Discovery:** `discover.py` runs the queries in `sources.yaml` through search APIs and watches public pages. Add any public site there.
+- **Secrets** (Settings > Secrets and variables > Actions): `GROQ_API_KEY` (required for LLM scoring), plus at least one of `TAVILY_API_KEY`, `EXA_API_KEY`, `BRAVE_API_KEY` for search. `PH_TOKEN` stays optional.
+- **JavaScript pages:** set `render: true` in `sources.yaml` and `pip install playwright && playwright install chromium` (not installed in the workflow by default).
+- **Limits by design:** no logins, captcha solving or stealth. robots.txt is respected. Sites that need those are out of reach: use their official alerts or `manual_leads.csv`.
+- Scraped text is untrusted. It is fenced in the prompt, and model output is validated and clamped, so a malicious post cannot change behaviour, only its own score.

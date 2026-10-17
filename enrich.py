@@ -245,7 +245,7 @@ def main():
         sys.exit("Run: pip install requests beautifulsoup4")
     ap = argparse.ArgumentParser()
     ap.add_argument("--limit", type=int, default=30, help="max leads to enrich per run")
-    ap.add_argument("--min-score", type=int, default=5)
+    ap.add_argument("--min-score", type=int, default=50, help="0-100 scale; 50+ = WARM or HOT")
     args = ap.parse_args()
 
     if not LEADS.exists():

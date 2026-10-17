@@ -9,8 +9,8 @@ on:
         description: "Max leads to enrich this run"
         default: "30"
       min_score:
-        description: "Min score to enrich"
-        default: "5"
+        description: "Min score (0-100) to enrich. 70+ HOT, 40-69 WARM"
+        default: "50"
 
 permissions:
   contents: write
@@ -46,10 +46,14 @@ jobs:
       - name: Collect and score leads
         env:
           PH_TOKEN: ${{ secrets.PH_TOKEN }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
+          EXA_API_KEY: ${{ secrets.EXA_API_KEY }}
+          BRAVE_API_KEY: ${{ secrets.BRAVE_API_KEY }}
         run: python lead_finder.py
 
       - name: Enrich (website, legal name, phone, email, socials)
-        run: python enrich.py --limit "${{ inputs.limit || '30' }}" --min-score "${{ inputs.min_score || '5' }}"
+        run: python enrich.py --limit "${{ inputs.limit || '30' }}" --min-score "${{ inputs.min_score || '50' }}"
 
       - name: Summary
         run: |
@@ -60,11 +64,12 @@ jobs:
           import csv
           rows = list(csv.DictReader(open("leads.csv", encoding="utf-8")))
           print(f"Total leads: {len(rows)}\n")
-          print("| Score | Company | Phone | Email | Source |")
-          print("|---|---|---|---|---|")
+          print("| Score | Tier | Company | Need | Phone | Email | Source |")
+          print("|---|---|---|---|---|---|---|")
           for r in rows[:15]:
-              name = (r.get("company") or r["title"])[:45].replace("|", " ")
-              print(f"| {r['score']} | {name} | {r.get('phone','')} | {r.get('email','')} | {r['source']} |")
+              name = (r.get("company") or r["title"])[:40].replace("|", " ")
+              need = (r.get("need") or "")[:50].replace("|", " ")
+              print(f"| {r['score']} | {r.get('tier','')} | {name} | {need} | {r.get('phone','')} | {r.get('email','')} | {r['source']} |")
           PY
           } >> "$GITHUB_STEP_SUMMARY"
 
