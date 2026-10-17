@@ -18,6 +18,7 @@ Env keys (all optional, set at least one for search):
   TAVILY_API_KEY, EXA_API_KEY, BRAVE_API_KEY
 """
 
+import json
 import os
 import re
 import sys
@@ -39,9 +40,9 @@ NAV_WORDS = {"login", "log in", "sign in", "sign up", "signup", "register", "abo
              "read more", "learn more", "apply", "next", "previous", "more", "skip to content"}
 
 
-def _item(source, title, url, text, company="", pre=None):
+def _item(source, title, url, text, company="", pre=None, website=""):
     return dict(source=source, title=title.strip(), company=company.strip(), url=url, text=text.strip(),
-                website="", contact="", pre=pre)
+                website=website, contact="", pre=pre)
 
 
 def load_config(path=CONFIG):
@@ -153,24 +154,50 @@ def _render(url):
         return ""
 
 
-def extract_links(html, base_url, max_items=80):
-    """Return [(anchor_text, absolute_url, context_text)] for content-like links."""
+STATE_FILE = Path("seen_pages.json")  # remembers what each watched page already listed
+
+
+def _load_state():
+    try:
+        return json.loads(STATE_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def _origin(u):
+    p = urlparse(u)
+    return f"{p.scheme}://{p.netloc}"
+
+
+def extract_links(html, base_url, max_items=100, link_regex=None, external_only=False):
+    """Return [(name, absolute_url, context_text)] for content-like links."""
     soup = BeautifulSoup(html, "html.parser")
     for t in soup(["script", "style", "noscript", "nav", "footer", "header"]):
         t.decompose()
+    base_host = urlparse(base_url).netloc.replace("www.", "")
+    rx = re.compile(link_regex) if link_regex else None
     out, seen = [], set()
     for a in soup.find_all("a", href=True):
-        text = re.sub(r"\s+", " ", a.get_text(" ", strip=True))
         href = a["href"].strip()
-        if not (3 <= len(text) <= 120) or text.lower() in NAV_WORDS:
-            continue
         if href.startswith(("#", "mailto:", "tel:", "javascript:")):
             continue
         url = urljoin(base_url, href)
-        if url in seen or urlparse(url).scheme not in ("http", "https"):
+        host = urlparse(url).netloc.replace("www.", "")
+        if urlparse(url).scheme not in ("http", "https") or url in seen:
+            continue
+        if rx and not rx.search(url):
+            continue
+        if external_only and (host == base_host or host.endswith("." + base_host)):
+            continue
+        text = re.sub(r"\s+", " ", a.get_text(" ", strip=True))
+        if len(text) > 120:  # whole card wrapped in the link: prefer its heading, else the first words
+            h = a.find(["h1", "h2", "h3", "h4", "h5", "strong", "b"])
+            htext = re.sub(r"\s+", " ", h.get_text(" ", strip=True)) if h else ""
+            text = htext if 2 < len(htext) <= 80 else text[:80].rsplit(" ", 1)[0]
+        if not (2 < len(text) <= 120) or text.lower() in NAV_WORDS:
             continue
         seen.add(url)
-        parent = a.find_parent(["li", "article", "div", "tr"]) or a
+        parent = a.find_parent(["li", "article", "tr", "div"]) or a
         ctx = re.sub(r"\s+", " ", parent.get_text(" ", strip=True))[:500]
         out.append((text, url, ctx))
         if len(out) >= max_items:
@@ -178,29 +205,73 @@ def extract_links(html, base_url, max_items=80):
     return out
 
 
+def _fetch_page(page, url, enrich):
+    if page.get("render"):
+        return _render(url) if enrich.allowed(url) else ""
+    return enrich.fetch(url)
+
+
 def run_pages(cfg):
     import enrich  # reuse the polite, robots-aware fetcher
 
+    state = _load_state()
     out = []
     for page in cfg.get("pages", []) or []:
         if page.get("enabled", True) is False:
             continue
         name, url, mode = page.get("name", "page"), page["url"], page.get("mode", "classify")
-        if page.get("render"):
-            html = _render(url) if enrich.allowed(url) else ""
-        else:
-            html = enrich.fetch(url)
-        if not html:
+
+        urls = [url]
+        if page.get("page_template"):
+            base = url.rstrip("/")
+            urls += [page["page_template"].format(url=base, n=i) for i in range(2, int(page.get("pages", 1)) + 1)]
+
+        links, complete = [], True
+        for i, u in enumerate(urls):
+            html = _fetch_page(page, u, enrich)
+            if not html:
+                complete = False  # any failed page makes the baseline unreliable
+                break
+            links += extract_links(html, u, int(page.get("max_items", 100)), page.get("link_regex"),
+                                   bool(page.get("external_only")))
+        if not links:
             print(f"[info] {name}: nothing fetched (blocked, empty or robots.txt disallows)")
             continue
-        links = extract_links(html, url, int(page.get("max_items", 80)))
-        for text, link, ctx in links:
+        uniq = {}
+        for l in links:
+            uniq.setdefault(l[1], l)
+        links = list(uniq.values())
+
+        first_time = name not in state
+        known = set(state.get(name, []))
+        if not complete:
+            print(f"[info] {name}: partial crawl, skipping so the baseline stays accurate")
+            continue
+        if first_time:
+            fresh = links if page.get("emit_initial") else []
+        else:
+            fresh = [l for l in links if l[1] not in known]
+        state[name] = sorted(known | {l[1] for l in links})
+
+        kws = page.get("require_keywords") or []
+        if kws:  # whole-word match (plural ok) so "tea" does not match "team"
+            rx = re.compile(r"\b(?:" + "|".join(re.escape(str(k).lower()) for k in kws) + r")s?\b")
+            fresh = [l for l in fresh if rx.search((l[0] + " " + l[2]).lower())]
+
+        for text, link, ctx in fresh:
+            site = _origin(link) if page.get("external_only") else ""
             if mode == "trigger":
                 pre = {"score": int(page.get("base_score", 55)), "signal": page.get("signal", name)}
-                out.append(_item(f"Page:{name}", text, link, f"{text}. {ctx}", company=text, pre=pre))
+                out.append(_item(f"Page:{name}", text, link, f"{text}. {ctx}", company=text, pre=pre, website=site))
             else:
-                out.append(_item(f"Page:{name}", text, link, f"{text}. {ctx}"))
-        print(f"[info] {name}: {len(links)} items")
+                out.append(_item(f"Page:{name}", text, link, f"{text}. {ctx}", website=site))
+        print(f"[info] {name}: {len(links)} listed, {len(fresh)} new"
+              + (" (baseline recorded)" if first_time and not page.get("emit_initial") else ""))
+
+    try:
+        STATE_FILE.write_text(json.dumps(state, indent=0), encoding="utf-8")
+    except OSError as ex:
+        print(f"[warn] could not save {STATE_FILE}: {ex}", file=sys.stderr)
     return out
 
 

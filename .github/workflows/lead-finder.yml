@@ -78,6 +78,7 @@ jobs:
           git config user.name "lead-finder-bot"
           git config user.email "lead-finder-bot@users.noreply.github.com"
           git add leads.csv manual_leads.csv
+          [ -f seen_pages.json ] && git add seen_pages.json || true
           if git diff --cached --quiet; then
             echo "No changes."
           else

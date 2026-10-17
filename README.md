@@ -42,3 +42,13 @@ Every lead gets a 0-100 score and a tier: **HOT** (70+), **WARM** (40-69), COLD.
 - **JavaScript pages:** set `render: true` in `sources.yaml` and `pip install playwright && playwright install chromium` (not installed in the workflow by default).
 - **Limits by design:** no logins, captcha solving or stealth. robots.txt is respected. Sites that need those are out of reach: use their official alerts or `manual_leads.csv`.
 - Scraped text is untrusted. It is fenced in the prompt, and model output is validated and clamped, so a malicious post cannot change behaviour, only its own score.
+
+## Watched pages (sources.yaml)
+Pages are checked every run, and **only newly added entries become leads**. The first run records a baseline in `seen_pages.json` (committed by the workflow) so you are not flooded with already-established companies. Two consumer-only lists (`sauce-vc-portfolio`, `fireside-ventures`) emit their current entries once as a starting pool.
+
+Enabled: Sauce.vc, Fireside, Venture Catalysts, Blume, Peak XV, Kalaari (via the public VCBacked directory) and BetaList new launches. The broader investor lists keep only entries whose name or description match consumer/physical-product keywords. Antler and Behance are off by default.
+
+VCBacked hides founder contacts behind signup. This tool does not try to get around that: it only reads the public company list, then `enrich.py` looks for contacts on each company's own website.
+
+## Referral partner targets (Dehradun / Uttarakhand)
+Incubators see founders at the moment they need a brand. Worth approaching for a referral arrangement (not scraped, outreach by hand): UPES Runway Incubator, TBI at Graphic Era University, TIDES (IIT Roorkee), FIED (IIM Kashipur), DIT University incubator, ACIC Devbhumi Foundation, Forest Research Institute (FRI).

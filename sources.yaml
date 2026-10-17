@@ -42,19 +42,103 @@ searches:
 
 # ---------- 2. PAGES (watched directly) ----------
 # mode: classify -> each link goes to the Groq scorer
-# mode: trigger  -> every new entry gets base_score (use for cohort/portfolio lists), no LLM cost
-# render: true   -> needs Playwright for JavaScript pages
+# mode: trigger  -> each entry gets base_score, no LLM cost
+# Only NEW entries become leads. The first run records a baseline (so you are not flooded with
+# companies that are already established), except where emit_initial: true.
+# Options: page_template + pages (pagination), link_regex, external_only, require_keywords, render.
+
 pages:
-  # Behance's terms restrict scraping, so this is OFF by default. Enable at your own risk.
+  # --- Consumer-brand VCs: startups that just got funding and sell physical products ---
+  - name: sauce-vc-portfolio          # consumer brands, links go straight to each brand's website
+    url: https://sauce.vc/portfolio
+    mode: trigger
+    external_only: true
+    emit_initial: true
+    base_score: 50
+    signal: consumer VC portfolio (Sauce.vc)
+
+  - name: fireside-ventures           # consumer-only portfolio, via VCBacked directory
+    url: https://www.vcbacked.co/directory/investors/fireside-ventures
+    page_template: "{url}/page/{n}"
+    pages: 3
+    link_regex: "/company/"
+    mode: trigger
+    emit_initial: true
+    base_score: 50
+    signal: consumer VC portfolio (Fireside)
+
+  # --- Broader investors: only entries that look like consumer/physical brands are kept ---
+  - name: venture-catalysts
+    url: https://www.vcbacked.co/directory/investors/venture-catalysts
+    page_template: "{url}/page/{n}"
+    pages: 10
+    link_regex: "/company/"
+    mode: trigger
+    base_score: 45
+    signal: accelerator portfolio (Venture Catalysts)
+    require_keywords: &consumer_kw [d2c, consumer, brand, food, beverage, snack, beauty, skincare, cosmetic, personal care, wellness, apparel, fashion, lifestyle, jewellery, jewelry, home, pet, baby, kids, organic, packaged, coffee, tea]
+
+  - name: blume-ventures
+    url: https://www.vcbacked.co/directory/investors/blume-ventures
+    page_template: "{url}/page/{n}"
+    pages: 7
+    link_regex: "/company/"
+    mode: trigger
+    base_score: 45
+    signal: seed portfolio (Blume)
+    require_keywords: *consumer_kw
+
+  - name: peak-xv
+    url: https://www.vcbacked.co/directory/investors/peak-xv-partners
+    page_template: "{url}/page/{n}"
+    pages: 17
+    link_regex: "/company/"
+    mode: trigger
+    base_score: 45
+    signal: portfolio (Peak XV)
+    require_keywords: *consumer_kw
+
+  - name: kalaari
+    url: https://www.vcbacked.co/directory/investors/kalaari-capital
+    page_template: "{url}/page/{n}"
+    pages: 3
+    link_regex: "/company/"
+    mode: trigger
+    base_score: 45
+    signal: portfolio (Kalaari)
+    require_keywords: *consumer_kw
+
+  # --- Pre-launch / new-launch feed ---
+  - name: betalist-new
+    url: https://betalist.com/
+    page_template: "{url}/?page={n}"
+    pages: 3
+    link_regex: "/startups/"
+    mode: trigger
+    base_score: 45
+    signal: new startup launch (BetaList)
+    require_keywords: *consumer_kw
+
+  # --- Off by default ---
+  - name: antler-portfolio            # global, partly JavaScript-rendered, mostly B2B/AI
+    url: https://antler.co/portfolio
+    mode: trigger
+    external_only: true
+    base_score: 45
+    signal: accelerator portfolio (Antler)
+    require_keywords: *consumer_kw
+    enabled: false
+
+  # Behance's terms restrict scraping, so this stays OFF unless you decide otherwise.
   - name: behance-jobs
     url: https://www.behance.net/joblist
     mode: classify
     render: true
     enabled: false
 
-  # Examples: add accelerator / incubator cohort pages you find. Verify the URL loads without login.
-  # - name: example-accelerator-cohort
-  #   url: https://example-accelerator.com/portfolio
+  # Add your own: accelerator / incubator cohort pages that load without login.
+  # - name: my-cohort-page
+  #   url: https://example.com/portfolio
   #   mode: trigger
-  #   base_score: 55
+  #   base_score: 50
   #   signal: accelerator cohort
